@@ -1,148 +1,92 @@
-import asyncHandler from "../utils/asynchandler.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
-import { ApiResponse } from "../utils/apiresponse.js";
-import userModel from "../models/user.model.js";
+import { UserModel } from "../models/user.model.js";
 
-// Register User
-const registerUser = asyncHandler(async (req, res) => {
-  const { name, email, password } = req.body;
-  if (!name || !email || !password) {
-    res.status(400);
-    throw new Error("Please fill all the fields");
-  }
-  const existedUser = await userModel.findOne({ $or: [{ email }] });
-  if (existedUser) {
-    return res.status(400).json({
-      success: false,
-      message: "User already exists",
-    });
-  }
-  const newUser = await userModel.create({
-    name,
-    email,
-    password: bcrypt.hashSync(password, 10),
-  });
-  const createdUser = await userModel
-    .findById(newUser._id)
-    .select("-password -refreshToken");
-  if (!createdUser) {
-    return res.status(500).json({
-      success: false,
-      message: "Failed to create user",
-    });
-  }
-  return res
-    .status(201)
-    .json(new ApiResponse(true, "User created successfully", createdUser));
-});
+const JWT_SECRET = process.env.JWT_SECRET;
+const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "7d";
 
-// Login User
-const loginUser = asyncHandler(async (req, res) => {
-  const { email, password } = req.body;
-  if (!email || !password) {
-    res.status(400);
-    throw new Error("Please fill all the fields");
-  }
-  const userDoc = await userModel.findOne({ email });
-  if (userDoc) {
-    const pass = bcrypt.compareSync(password, userDoc.password);
-    if (pass) {
-      jwt.sign(
-        { email: userDoc.email, id: userDoc._id, name: userDoc.name },
-        process.env.JWT_SECRET,
-        { expiresIn: "1d" },
-        (err, token) => {
-          if (err) throw err;
-          res
-            .cookie("token", token, {
-              httpOnly: true,
-              secure: process.env.NODE_ENV === "production", // Set secure to true in production
-              sameSite: "None", // Required for cross-site cookies
-            })
-            .json({ token, user: userDoc }); // Include token in response
-        }
-      );
-    } else {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid email or password",
-      });
-    }
-  }
-});
-
-// Logout User
-const logoutUser = asyncHandler(async (req, res) => {
-  res
-    .clearCookie("token", {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "None",
-    })
-    .json({
-      message: "Logged out successfully",
-    });
-});
-
-// User Profile
-const userProfile = asyncHandler(async (req, res) => {
+// ✅ Register User
+export const registerUser = async (req, res) => {
   try {
-    const { token } = req.cookies;
-    if (!token) {
-      return res.status(400).json({
-        success: false,
-        message: "Not authorized, token missing",
-      });
-    }
-    jwt.verify(token, process.env.JWT_SECRET, {}, async (err, userDoc) => {
-      if (err) {
-        return res.status(400).json({
-          success: false,
-          message: "Not authorized, token invalid",
-          error: err.message,
-        });
-      }
-      const user = await userModel.findById(userDoc.id);
-      if (!user) {
-        return res.status(404).json({
-          success: false,
-          message: "User not found",
-        });
-      }
-      const { name, email, id } = user;
-      res.json({ name, email, id });
-    });
-  } catch (e) {
-    console.error("Server error:", e);
-    res.status(500).json({
-      success: false,
-      message: "Server error",
-      error: e.message,
-    });
-  }
-});
-const validateToken = asyncHandler(async (req, res) => {
-  const token =
-    req.headers.authorization && req.headers.authorization.split(" ")[1]; // Get token from 'Authorization' header
-  if (!token) {
-    return res.status(401).json({ success: false, message: "Not authorized" });
-  }
+    const { username, email, fullName, password, profilePic } = req.body;
 
-  jwt.verify(token, process.env.JWT_SECRET, async (err, userDoc) => {
-    if (err) {
-      return res.status(401).json({ success: false, message: "Token invalid" });
-    }
+    const existingUser = await UserModel.findByEmail(email);
+    if (existingUser)
+      return res.status(400).json({ message: "User already exists" });
 
-    const user = await userModel.findById(userDoc.id).select("-password");
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    const user = {
+      UserId: Date.now().toString(),
+      username,
+      email,
+      fullName,
+      password: hashedPassword,
+      profilePic: profilePic || null,
+    };
+
+    const newUser = await UserModel.createUser(user);
+    res.status(201).json({ success: true, user: newUser });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// ✅ Login User
+export const loginUser = async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    const user = await UserModel.findByEmail(email);
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    const validPassword = await bcrypt.compare(password, user.password);
+    if (!validPassword)
+      return res.status(401).json({ message: "Invalid credentials" });
+
+    const token = jwt.sign(
+      { UserId: user.UserId, email: user.email },
+      JWT_SECRET,
+      { expiresIn: JWT_EXPIRES_IN }
+    );
+
+    res.status(200).json({
+      success: true,
+      token,
+      user: {
+        UserId: user.UserId,
+        username: user.username,
+        email: user.email,
+        fullName: user.fullName,
+        profilePic: user.profilePic,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+export const profile = async (req, res) => {
+  try {
+    const { userId } = req.user; // userId from decoded JWT
+    console.log("Decoded JWT user:", userId);
+    // Fetch full user record from DynamoDB
+    const user = await UserModel.getUserById(userId);
+
     if (!user) {
       return res
         .status(404)
         .json({ success: false, message: "User not found" });
     }
 
-    res.json({ success: true, user });
-  });
-});
+    // Don’t expose password hash
+    delete user.password;
 
-export { logoutUser, loginUser, userProfile, registerUser, validateToken };
+    res.status(200).json({
+      success: true,
+      message: "Profile data retrieved successfully",
+      user,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+};

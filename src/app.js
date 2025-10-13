@@ -1,7 +1,7 @@
 import express from "express";
 import cookieParser from "cookie-parser";
 import cors from "cors";
-
+import interactionRouter from "./routes/interactions.routes.js";
 const app = express();
 const corsOptions = {
   origin: ["http://localhost:5173"],
@@ -20,6 +20,7 @@ app.use(cookieParser());
 
 import userRouter from "./routes/user.routes.js";
 app.use("/user", userRouter);
+app.use("/api", interactionRouter);
 
 app.use("/", (req, res) => {
   res.json("Hell");
