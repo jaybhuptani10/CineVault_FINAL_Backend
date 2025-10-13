@@ -1,6 +1,7 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { UserModel } from "../models/user.model.js";
+import { uploadToCloudinary } from "../utils/cloudinary.js";
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "7d";
@@ -8,11 +9,20 @@ const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "7d";
 // ✅ Register User
 export const registerUser = async (req, res) => {
   try {
-    const { username, email, fullName, password, profilePic } = req.body;
+    const { username, email, fullName, password } = req.body;
 
     const existingUser = await UserModel.findByEmail(email);
     if (existingUser)
       return res.status(400).json({ message: "User already exists" });
+
+    // Upload profile picture to Cloudinary if provided
+    let profilePicUrl = null;
+    if (req.file) {
+      const cloudinaryResponse = await uploadToCloudinary(req.file.path);
+      if (cloudinaryResponse) {
+        profilePicUrl = cloudinaryResponse.secure_url;
+      }
+    }
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
@@ -22,7 +32,7 @@ export const registerUser = async (req, res) => {
       email,
       fullName,
       password: hashedPassword,
-      profilePic: profilePic || null,
+      profilePic: profilePicUrl,
     };
 
     const newUser = await UserModel.createUser(user);
