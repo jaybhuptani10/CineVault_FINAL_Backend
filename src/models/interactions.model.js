@@ -14,24 +14,26 @@ const TABLE = process.env.DYNAMODB_TABLE_INTERACTIONS;
 export const InteractionsModel = {
   // Add or update a user's interaction with a movie
   async upsertInteraction({
-    userId,
+    UserId, // Changed from userId to UserId
     movieId,
     status,
     rating,
     review,
     movieTitle,
     posterUrl,
+    type,
   }) {
     const params = {
       TableName: TABLE,
       Item: {
-        userId,
+        UserId, // Changed from userId to UserId
         movieId,
         status,
         rating,
         review,
         movieTitle,
         posterUrl,
+        type,
         timestamp: Date.now(),
       },
     };
@@ -40,16 +42,22 @@ export const InteractionsModel = {
   },
 
   // Get all interactions of a specific user
-  async getUserInteractions(userId) {
+  async getUserInteractions(UserId) {
+    if (!UserId) {
+      throw new Error("UserId is required");
+    }
+
     const params = {
       TableName: TABLE,
-      KeyConditionExpression: "userId = :uid",
+      KeyConditionExpression: "UserId = :uid", // Changed from userId to UserId
       ExpressionAttributeValues: {
-        ":uid": userId,
+        ":uid": UserId.toString(), // Ensure UserId is a string
       },
     };
+
+    console.log("Query params:", params);
     const { Items } = await dynamo.send(new QueryCommand(params));
-    return Items;
+    return Items || []; // Return empty array if no items found
   },
 
   // Get interaction for a specific movie

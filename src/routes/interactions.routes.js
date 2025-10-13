@@ -7,6 +7,6 @@ import {
 const router = express.Router();
 
 router.post("/interaction", addOrUpdateInteraction);
-router.get("/interactions/:userId", getUserInteractions);
+router.get("/interactions/:UserId", getUserInteractions); // Changed from userId to UserId
 
 export default router;
