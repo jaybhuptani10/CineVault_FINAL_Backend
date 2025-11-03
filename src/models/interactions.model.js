@@ -79,4 +79,55 @@ export const InteractionsModel = {
     await dynamo.send(new DeleteCommand(params));
     return { message: "Interaction deleted" };
   },
+
+  async getUserInteractionsByType(UserId, type) {
+    if (!UserId || !type) {
+      throw new Error("UserId and type are required");
+    }
+
+    const params = {
+      TableName: TABLE,
+      KeyConditionExpression: "UserId = :uid",
+      FilterExpression: "#type = :type",
+      ExpressionAttributeNames: {
+        "#type": "type",
+      },
+      ExpressionAttributeValues: {
+        ":uid": UserId.toString(),
+        ":type": type,
+      },
+    };
+
+    console.log("Query params:", params);
+    const { Items } = await dynamo.send(new QueryCommand(params));
+    return Items || [];
+  },
+
+  async getUserMovieInteraction(UserId, type, movieId) {
+    if (!UserId || !movieId) {
+      throw new Error("UserId and movieId are required");
+    }
+
+    try {
+      const params = {
+        TableName: TABLE,
+        Key: {
+          UserId: UserId.toString(),
+          movieId: movieId.toString(),
+        },
+      };
+
+      console.log("Get params:", JSON.stringify(params, null, 2));
+      const { Item } = await dynamo.send(new GetCommand(params));
+      console.log("Raw result:", Item);
+
+      if (Item && (!type || Item.type === type)) {
+        return Item;
+      }
+      return null;
+    } catch (error) {
+      console.error("Error in getUserMovieInteraction:", error);
+      throw error;
+    }
+  },
 };

@@ -77,10 +77,10 @@ export const loginUser = async (req, res) => {
 };
 export const profile = async (req, res) => {
   try {
-    const { userId } = req.user; // userId from decoded JWT
-    console.log("Decoded JWT user:", userId);
+    const { UserId } = req.user; // userId from decoded JWT
+
     // Fetch full user record from DynamoDB
-    const user = await UserModel.getUserById(userId);
+    const user = await UserModel.getUserById(UserId);
 
     if (!user) {
       return res
