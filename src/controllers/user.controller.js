@@ -75,6 +75,70 @@ export const loginUser = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+
+// Add favorite movie
+export const addFavoriteMovie = async (req, res) => {
+  try {
+    const { UserId } = req.user;
+    if (!UserId)
+      return res.status(401).json({ success: false, error: "Unauthorized" });
+
+    const { movieId, movieTitle, movieYear, posterUrl, type } = req.body;
+    if (!movieId)
+      return res
+        .status(400)
+        .json({ success: false, error: "movieId is required" });
+
+    const movie = {
+      movieId: movieId.toString(),
+      movieTitle,
+      movieYear,
+      posterUrl,
+      type,
+    };
+    const updated = await UserModel.addFavorite(UserId, movie);
+
+    res.status(200).json({ success: true, favorites: updated.favorites || [] });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+// Remove favorite movie
+export const removeFavoriteMovie = async (req, res) => {
+  try {
+    const { UserId } = req.user;
+    if (!UserId)
+      return res.status(401).json({ success: false, error: "Unauthorized" });
+
+    const { movieId } = req.params;
+    if (!movieId)
+      return res
+        .status(400)
+        .json({ success: false, error: "movieId is required" });
+
+    const updated = await UserModel.removeFavorite(UserId, movieId.toString());
+    res.status(200).json({ success: true, favorites: updated.favorites || [] });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+// Get user's favorites
+export const getFavorites = async (req, res) => {
+  try {
+    const { UserId } = req.user;
+    if (!UserId)
+      return res.status(401).json({ success: false, error: "Unauthorized" });
+
+    const favorites = await UserModel.getFavorites(UserId);
+    res.status(200).json({ success: true, favorites });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+// Get user profile
 export const profile = async (req, res) => {
   try {
     const { UserId } = req.user; // userId from decoded JWT

@@ -13,7 +13,6 @@ dotenv.config();
 const USERS_TABLE = process.env.DYNAMODB_TABLE_USERS;
 
 export const UserModel = {
-  // ✅ Create new user
   async createUser(userData) {
     const params = {
       TableName: USERS_TABLE,
@@ -78,5 +77,39 @@ export const UserModel = {
     };
     await dynamo.send(new DeleteCommand(params));
     return { message: "User deleted successfully" };
+  },
+
+  // Add a favorite movie to user's favorites (no duplicates)
+  async addFavorite(UserId, movie) {
+    const user = await this.getUserById(UserId);
+    const favorites = Array.isArray(user?.favorites) ? [...user.favorites] : [];
+
+    // ensure movie object has movieId
+    if (!movie || !movie.movieId) {
+      throw new Error("movie.movieId is required");
+    }
+
+    const exists = favorites.find((f) => f.movieId === movie.movieId);
+    if (!exists) {
+      favorites.push({ ...movie, addedAt: Date.now() });
+    }
+
+    const updated = await this.updateUser(UserId, { favorites });
+    return updated; // returns Attributes from UpdateCommand (ALL_NEW)
+  },
+
+  // Remove a favorite movie by movieId
+  async removeFavorite(UserId, movieId) {
+    const user = await this.getUserById(UserId);
+    const favorites = Array.isArray(user?.favorites) ? [...user.favorites] : [];
+    const filtered = favorites.filter((f) => f.movieId !== movieId);
+    const updated = await this.updateUser(UserId, { favorites: filtered });
+    return updated;
+  },
+
+  // Get favorites array
+  async getFavorites(UserId) {
+    const user = await this.getUserById(UserId);
+    return Array.isArray(user?.favorites) ? user.favorites : [];
   },
 };
