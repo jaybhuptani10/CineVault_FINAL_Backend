@@ -1,115 +1,114 @@
-import {
-  PutCommand,
-  GetCommand,
-  UpdateCommand,
-  DeleteCommand,
-  QueryCommand,
-  ScanCommand,
-} from "@aws-sdk/lib-dynamodb";
-import { dynamo } from "../db/index.js";
-import dotenv from "dotenv";
+import { PutCommand, QueryCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
+import { docClient } from "../db/index.js";
+import bcrypt from "bcryptjs";
+import { v4 as uuidv4 } from "uuid";
 
-dotenv.config();
-const USERS_TABLE = process.env.DYNAMODB_TABLE_USERS;
+const TABLE_NAME = "CineVault";
 
 export const UserModel = {
-  async createUser(userData) {
-    const params = {
-      TableName: USERS_TABLE,
-      Item: userData,
+  // ➕ Create new user
+  async createUserProfile({
+    fullName,
+    username,
+    email,
+    password,
+    bio = "",
+    location = "",
+    interests = [],
+    profilePic = "",
+  }) {
+    const userId = uuidv4();
+    const passwordHash = await bcrypt.hash(password, 10);
+
+    const userItem = {
+      PK: `USER#${userId}`,
+      SK: "PROFILE",
+      GSI1PK: `EMAIL#${email.toLowerCase()}`, // 🔥 Added
+      GSI1SK: `USER#${userId}`, // 🔥 Added
+      userId,
+      fullName,
+      username: username.toLowerCase(),
+      email: email.toLowerCase(),
+      passwordHash,
+      bio,
+      profilePic,
+      location,
+      interests,
+      favourites: [],
+      badges: ["New User"],
+      points: 0,
+      privacy: {
+        profileVisibility: "public",
+        showActivity: true,
+        showCollections: true,
+      },
+      followersCount: 0,
+      followingCount: 0,
+      watchlistCount: 0,
+      collectionsCount: 0,
+      joinedAt: new Date().toISOString(),
+      settings: { theme: "dark", language: "en" },
     };
-    await dynamo.send(new PutCommand(params));
-    return userData;
+
+    await docClient.send(
+      new PutCommand({
+        TableName: TABLE_NAME,
+        Item: userItem,
+        ConditionExpression: "attribute_not_exists(PK)",
+      })
+    );
+
+    return { message: "✅ User created successfully", user: userItem };
   },
 
-  // ✅ Get user by userId (primary key)
-  async getUserById(UserId) {
+  // 🔎 Get by email (for login)
+  async getUserByEmail(email) {
     const params = {
-      TableName: USERS_TABLE,
-      Key: { UserId },
+      TableName: TABLE_NAME,
+      IndexName: "GSI1", // optional if you create GSI on email; otherwise scan manually
+      KeyConditionExpression: "GSI1PK = :pk",
+      ExpressionAttributeValues: { ":pk": `EMAIL#${email.toLowerCase()}` },
     };
-    const { Item } = await dynamo.send(new GetCommand(params));
-    return Item;
+    const result = await docClient.send(new QueryCommand(params));
+    return result.Items?.[0];
   },
 
-  // ✅ Get user by email (if email is not your primary key)
-  async findByEmail(email) {
-    // DynamoDB doesn't allow direct "Get" by a non-key attribute
-    // so we use Scan (or GSI if you set one up for email)
+  // 👀 Get profile by userId
+  async getUserProfile(userId) {
     const params = {
-      TableName: USERS_TABLE,
-      FilterExpression: "email = :email",
+      TableName: TABLE_NAME,
+      KeyConditionExpression: "PK = :pk AND SK = :sk",
       ExpressionAttributeValues: {
-        ":email": email,
+        ":pk": `USER#${userId}`,
+        ":sk": "PROFILE",
       },
     };
-    const { Items } = await dynamo.send(new ScanCommand(params));
-    return Items.length > 0 ? Items[0] : null;
+    const result = await docClient.send(new QueryCommand(params));
+    return result.Items?.[0];
   },
 
-  // ✅ Update user info
-  async updateUser(UserId, updates) {
-    const updateExpression = [];
-    const expressionAttributeValues = {};
+  // ✏️ Update profile
+  async updateUserProfile(userId, updateData) {
+    const updateExpressions = [];
+    const attrNames = {};
+    const attrValues = {};
 
-    for (const [key, value] of Object.entries(updates)) {
-      updateExpression.push(`${key} = :${key}`);
-      expressionAttributeValues[`:${key}`] = value;
-    }
+    Object.keys(updateData).forEach((key) => {
+      updateExpressions.push(`#${key} = :${key}`);
+      attrNames[`#${key}`] = key;
+      attrValues[`:${key}`] = updateData[key];
+    });
 
     const params = {
-      TableName: USERS_TABLE,
-      Key: { UserId },
-      UpdateExpression: `set ${updateExpression.join(", ")}`,
-      ExpressionAttributeValues: expressionAttributeValues,
+      TableName: TABLE_NAME,
+      Key: { PK: `USER#${userId}`, SK: "PROFILE" },
+      UpdateExpression: "SET " + updateExpressions.join(", "),
+      ExpressionAttributeNames: attrNames,
+      ExpressionAttributeValues: attrValues,
       ReturnValues: "ALL_NEW",
     };
 
-    const { Attributes } = await dynamo.send(new UpdateCommand(params));
-    return Attributes;
-  },
-
-  // ✅ Delete user
-  async deleteUser(UserId) {
-    const params = {
-      TableName: USERS_TABLE,
-      Key: { UserId },
-    };
-    await dynamo.send(new DeleteCommand(params));
-    return { message: "User deleted successfully" };
-  },
-
-  // Add a favorite movie to user's favorites (no duplicates)
-  async addFavorite(UserId, movie) {
-    const user = await this.getUserById(UserId);
-    const favorites = Array.isArray(user?.favorites) ? [...user.favorites] : [];
-
-    // ensure movie object has movieId
-    if (!movie || !movie.movieId) {
-      throw new Error("movie.movieId is required");
-    }
-
-    const exists = favorites.find((f) => f.movieId === movie.movieId);
-    if (!exists) {
-      favorites.push({ ...movie, addedAt: Date.now() });
-    }
-
-    const updated = await this.updateUser(UserId, { favorites });
-    return updated; // returns Attributes from UpdateCommand (ALL_NEW)
-  },
-
-  // Remove a favorite movie by movieId
-  async removeFavorite(UserId, movieId) {
-    const user = await this.getUserById(UserId);
-    const favorites = Array.isArray(user?.favorites) ? [...user.favorites] : [];
-    const filtered = favorites.filter((f) => f.movieId !== movieId);
-    const updated = await this.updateUser(UserId, { favorites: filtered });
-    return updated;
-  },
-
-  // Get favorites array
-  async getFavorites(UserId) {
-    const user = await this.getUserById(UserId);
-    return Array.isArray(user?.favorites) ? user.favorites : [];
+    const result = await docClient.send(new UpdateCommand(params));
+    return result.Attributes;
   },
 };

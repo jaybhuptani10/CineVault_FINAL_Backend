@@ -1,25 +1,23 @@
 import express from "express";
-import {
-  registerUser,
-  loginUser,
-  profile,
-  addFavoriteMovie,
-  removeFavoriteMovie,
-  getFavorites,
-} from "../controllers/user.controller.js";
-import { verifyToken } from "../middlewares/auth.middleware.js";
 import { upload } from "../middlewares/uploads.js";
+import { authenticateToken } from "../middlewares/auth.middleware.js";
+import {
+  createUser,
+  loginUser,
+  getUserProfile,
+  updateUserProfile,
+} from "../controllers/user.controller.js";
 
-const router = express.Router();
+const userRouter = express.Router();
 
-router.post("/register", upload.single("profilePic"), registerUser);
-router.post("/login", loginUser);
+userRouter.post("/signup", upload.single("profilePic"), createUser);
+userRouter.post("/login", loginUser);
+userRouter.get("/:userId", getUserProfile);
+userRouter.patch(
+  "/:userId",
+  authenticateToken,
+  upload.single("profilePic"),
+  updateUserProfile
+);
 
-router.get("/profile", verifyToken, profile);
-
-// Favorites endpoints (protected)
-router.post("/favorites", verifyToken, addFavoriteMovie);
-router.get("/favorites", verifyToken, getFavorites);
-router.delete("/favorites/:movieId", verifyToken, removeFavoriteMovie);
-
-export default router;
+export default userRouter;
